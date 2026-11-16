@@ -13,7 +13,9 @@ param(
     [Parameter(Mandatory = $true)][string]$Version,
     [string]$Notas = "Mejoras y correcciones."
 )
-$ErrorActionPreference = "Stop"
+# Los avisos de Gradle salen por stderr y no son errores: se revisa
+# $LASTEXITCODE después de cada paso.
+$ErrorActionPreference = "Continue"
 $flutter = "C:\Users\jpgcp\flutter\bin\flutter.bat"
 
 if ($Version -notmatch '^\d+\.\d+\.\d+$') { throw "La versión debe ser como 1.0.1" }
@@ -46,6 +48,7 @@ foreach ($abi in @("arm64-v8a", "armeabi-v7a", "x86_64")) {
 git add -A
 git commit -m "Versión $Version" -m $Notas
 git push -u origin HEAD
+if ($LASTEXITCODE -ne 0) { throw "No se pudo subir a GitHub." }
 
 # 4. Release
 gh release create "v$Version" @apks --title "Versión $Version" --notes $Notas
