@@ -16,6 +16,11 @@ class MainActivity : FlutterActivity() {
         // Abre el instalador de Android con el APK que descargó la app.
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "visitasdefe/instalador")
             .setMethodCallHandler { llamada, resultado ->
+                if (llamada.method == "abis") {
+                    // Procesadores que soporta el teléfono, el preferido primero.
+                    resultado.success(Build.SUPPORTED_ABIS.toList())
+                    return@setMethodCallHandler
+                }
                 if (llamada.method == "puedeInstalar") {
                     resultado.success(
                         Build.VERSION.SDK_INT < Build.VERSION_CODES.O ||

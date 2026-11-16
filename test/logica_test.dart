@@ -38,27 +38,50 @@ void main() {
       );
     });
 
-    test('prefiere el APK universal, luego arm64', () {
+    test('elige el APK del procesador del teléfono', () {
+      final datos = release('v1.1.0', [
+        'visitas-de-fe-armeabi-v7a.apk',
+        'visitas-de-fe-arm64-v8a.apk',
+        'visitas-de-fe-x86_64.apk',
+      ]);
       final a = leerVersionPublicada(
-        release('v1.1.0', [
-          'app-armeabi-v7a-release.apk',
-          'app-arm64-v8a-release.apk',
-          'visitas-de-fe.apk',
-        ]),
+        datos,
         '1.0.0',
+        abis: ['arm64-v8a', 'armeabi-v7a', 'armeabi'],
       )!;
       expect(a.version, '1.1.0');
-      expect(a.url, 'https://x/visitas-de-fe.apk');
+      expect(a.url, 'https://x/visitas-de-fe-arm64-v8a.apk');
       expect(a.notas, 'Arreglos');
 
+      // Un teléfono viejo de 32 bits recibe el suyo.
       final b = leerVersionPublicada(
-        release('v1.1.0', [
-          'app-armeabi-v7a-release.apk',
-          'app-arm64-v8a-release.apk',
-        ]),
+        datos,
         '1.0.0',
+        abis: ['armeabi-v7a', 'armeabi'],
       )!;
-      expect(b.url, 'https://x/app-arm64-v8a-release.apk');
+      expect(b.url, 'https://x/visitas-de-fe-armeabi-v7a.apk');
+
+      // x86_64 no se confunde con x86.
+      final c = leerVersionPublicada(datos, '1.0.0', abis: ['x86_64', 'x86'])!;
+      expect(c.url, 'https://x/visitas-de-fe-x86_64.apk');
+    });
+
+    test('sin APK de su procesador, usa el universal', () {
+      final a = leerVersionPublicada(
+        release('v1.1.0', ['visitas-de-fe-x86_64.apk', 'visitas-de-fe.apk']),
+        '1.0.0',
+        abis: ['arm64-v8a'],
+      )!;
+      expect(a.url, 'https://x/visitas-de-fe.apk');
+      // Y si solo hay de otro procesador, no ofrece nada.
+      expect(
+        leerVersionPublicada(
+          release('v1.1.0', ['visitas-de-fe-x86_64.apk']),
+          '1.0.0',
+          abis: ['arm64-v8a'],
+        ),
+        isNull,
+      );
     });
 
     test('sin APK no hay actualización', () {

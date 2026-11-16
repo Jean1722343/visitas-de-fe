@@ -396,9 +396,17 @@ class PantallaHospital extends ConsumerWidget {
                     h.ciudad.isEmpty &&
                     h.telefono.isEmpty &&
                     h.notas.isEmpty)
-                  const ListTile(
-                    leading: Icon(Icons.info_outline_rounded),
-                    title: Text('Sin datos de contacto.'),
+                  ListTile(
+                    leading: const Icon(Icons.info_outline_rounded),
+                    title: Text(
+                      esAdmin
+                          ? 'Agrega dirección, teléfono u horario de visita'
+                          : 'Sin datos de contacto.',
+                    ),
+                    trailing: esAdmin ? const Icon(Icons.edit_rounded) : null,
+                    onTap: esAdmin
+                        ? () => editarHospital(context, ref, h)
+                        : null,
                   ),
               ],
             ),

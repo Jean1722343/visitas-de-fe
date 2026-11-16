@@ -469,7 +469,10 @@ class _OraPor extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) => Card(
     clipBehavior: Clip.antiAlias,
     child: InkWell(
-      onTap: () => abrir(context, PantallaRegistro(r.id)),
+      onTap: () {
+        FocusManager.instance.primaryFocus?.unfocus();
+        abrir(context, PantallaRegistro(r.id));
+      },
       child: Padding(
         padding: const EdgeInsets.fromLTRB(14, 12, 12, 12),
         child: Row(

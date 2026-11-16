@@ -1,10 +1,10 @@
-# Publica una versión nueva: todos los teléfonos la descargan e instalan solos.
+﻿# Publica una versión nueva: todos los teléfonos la descargan e instalan solos.
 #
 # Uso (desde la carpeta del proyecto, en PowerShell):
 #   .\publicar.ps1 1.0.1 "Qué cambió en esta versión"
 #
 # 1. Sube la versión en pubspec.yaml (y el número de compilación).
-# 2. Compila el APK firmado con la llave propia (android/key.properties).
+# 2. Compila un APK firmado por tipo de procesador (llave en android/key.properties).
 # 3. Guarda los cambios en git y los sube a GitHub.
 # 4. Crea el release v<versión> con el APK. Al abrir la app, cada teléfono
 #    lo detecta, lo descarga y abre el instalador.
@@ -30,10 +30,17 @@ Write-Host "Versión $Version (compilación $compilacion)"
 # 2. Compilar
 & $flutter test
 if ($LASTEXITCODE -ne 0) { throw "Las pruebas fallaron; no se publica." }
-& $flutter build apk --release
+# Un APK por tipo de procesador: cada teléfono baja solo el suyo (~3 veces
+# más ligero). No se publica el universal: su número de versión interno es
+# menor que el de los separados y Android no lo instalaría encima.
+& $flutter build apk --release --split-per-abi
 if ($LASTEXITCODE -ne 0) { throw "No compiló." }
-$apk = "build\visitas-de-fe.apk"
-Copy-Item "build\app\outputs\flutter-apk\app-release.apk" $apk -Force
+$apks = @()
+foreach ($abi in @("arm64-v8a", "armeabi-v7a", "x86_64")) {
+    $destino = "build/visitas-de-fe-$abi.apk"
+    Copy-Item "build/app/outputs/flutter-apk/app-$abi-release.apk" $destino -Force
+    $apks += $destino
+}
 
 # 3. Git
 git add -A
@@ -41,5 +48,5 @@ git commit -m "Versión $Version" -m $Notas
 git push -u origin HEAD
 
 # 4. Release
-gh release create "v$Version" $apk --title "Versión $Version" --notes $Notas
+gh release create "v$Version" @apks --title "Versión $Version" --notes $Notas
 Write-Host "Listo: v$Version publicada. Los teléfonos se actualizarán al abrir la app."

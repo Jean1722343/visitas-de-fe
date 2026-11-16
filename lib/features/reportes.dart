@@ -67,7 +67,9 @@ class _ListaNuevaState extends ConsumerState<_ListaNueva> {
     final pendientes = lista.where((r) => r.pendienteDeSubir).length;
     final ok = await confirmar(
       context,
-      titulo: 'Archivar ${lista.length} registros',
+      titulo: lista.length == 1
+          ? 'Archivar 1 registro'
+          : 'Archivar ${lista.length} registros',
       texto:
           'Esta lista queda guardada en «Archivadas» y estos registros ya no '
           'salen en la siguiente lista ni en la pestaña Registros. '
@@ -175,6 +177,8 @@ class _ListaNuevaState extends ConsumerState<_ListaNueva> {
                 label: Text(
                   _archivando
                       ? 'Archivando…'
+                      : lista.length == 1
+                      ? 'Archivar 1 registro'
                       : 'Archivar estos ${lista.length} registros',
                 ),
               ),

@@ -57,7 +57,7 @@ Future<Actualizacion?> buscarActualizacion(String instalada) async {
     final respuesta = await pedido.close().timeout(const Duration(seconds: 10));
     if (respuesta.statusCode != 200) return null;
     final datos = jsonDecode(await respuesta.transform(utf8.decoder).join());
-    return leerVersionPublicada(datos, instalada);
+    return leerVersionPublicada(datos, instalada, abis: await _abis());
   } catch (_) {
     return null;
   } finally {
@@ -66,26 +66,38 @@ Future<Actualizacion?> buscarActualizacion(String instalada) async {
 }
 
 /// Saca de la respuesta de GitHub la versión y el APK, solo si es más nueva
-/// que la instalada. Si hay varios APK (uno por arquitectura), prefiere el
-/// universal o el de arm64, que es el de casi todos los teléfonos.
-Actualizacion? leerVersionPublicada(dynamic datos, String instalada) {
+/// que la instalada. Se publica un APK por tipo de procesador (más ligero);
+/// se elige el del procesador del teléfono ([abis], el preferido primero) y,
+/// si no hay, el universal.
+Actualizacion? leerVersionPublicada(
+  dynamic datos,
+  String instalada, {
+  List<String> abis = const [],
+}) {
   if (datos is! Map) return null;
   final etiqueta = datos['tag_name'];
   if (etiqueta is! String || !esMasNueva(etiqueta, instalada)) return null;
   final archivos = datos['assets'];
   if (archivos is! List) return null;
+  const conocidos = ['arm64-v8a', 'armeabi-v7a', 'x86_64', 'x86'];
   Map? elegido;
-  var puntos = -1;
+  var puntos = 0;
   for (final a in archivos) {
     if (a is! Map) continue;
     final nombre = a['name'];
     if (nombre is! String || !nombre.endsWith('.apk')) continue;
     if (a['browser_download_url'] is! String) continue;
-    final p = nombre.contains('arm64')
-        ? 2
-        : (nombre.contains('armeabi') || nombre.contains('x86'))
-        ? 0
-        : 3;
+    // «x86» también aparece dentro de «x86_64»: se busca el más largo.
+    final abi = conocidos.where(nombre.contains).firstOrNull;
+    final int p;
+    if (abi == null) {
+      p = 10; // universal: sirve en cualquier teléfono
+    } else if (abis.isEmpty) {
+      p = abi == 'arm64-v8a' ? 5 : 0;
+    } else {
+      final i = abis.indexOf(abi);
+      p = i < 0 ? 0 : 100 - i; // el del procesador preferido gana
+    }
     if (p > puntos) {
       puntos = p;
       elegido = a;
@@ -269,4 +281,13 @@ Future<void> abrirPermisoInstalacion() async {
   try {
     await _canal.invokeMethod<void>('abrirPermiso');
   } catch (_) {}
+}
+
+/// Procesadores del teléfono, el preferido primero.
+Future<List<String>> _abis() async {
+  try {
+    return (await _canal.invokeListMethod<String>('abis')) ?? const [];
+  } catch (_) {
+    return const [];
+  }
 }

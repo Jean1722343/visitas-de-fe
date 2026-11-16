@@ -216,10 +216,18 @@ ThemeData temaPara(Color principal) {
     ),
     switchTheme: SwitchThemeData(
       thumbColor: WidgetStateProperty.resolveWith(
-        (e) => e.contains(WidgetState.selected) ? Colores.blanco : null,
+        (e) => e.contains(WidgetState.selected)
+            ? Colores.blanco
+            : Colores.textoSuave,
       ),
       trackColor: WidgetStateProperty.resolveWith(
-        (e) => e.contains(WidgetState.selected) ? principal : null,
+        (e) => e.contains(WidgetState.selected) ? principal : Colores.nube,
+      ),
+      // Apagado también se distingue: borde y bolita grises.
+      trackOutlineColor: WidgetStateProperty.resolveWith(
+        (e) => e.contains(WidgetState.selected)
+            ? Colors.transparent
+            : Colores.textoApagado,
       ),
     ),
     checkboxTheme: CheckboxThemeData(
