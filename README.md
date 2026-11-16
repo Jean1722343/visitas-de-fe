@@ -10,12 +10,12 @@ App Android para iglesias que visitan hospitales: registran a las personas con l
 |---|---|
 | **Registrar persona** | Lo único que hace el servidor: nombre completo, edad, teléfono, domicilio, si se ora por la persona o por un familiar internado (nombre y parentesco), padecimiento, área/cuarto/cama, petición, si quiere seguimiento y notas, con hospital y fecha. *Guardar y registrar otra* para capturar rápido; recuerda el último hospital. |
 | **Sin internet** | Todo se guarda en el teléfono y se sube solo al volver la señal. Cada registro pendiente muestra una nube tachada y el inicio avisa cuántos faltan. |
-| **Reportes en PDF** | Los administradores sacan todos los datos en tablas: hoja de resumen (por hospital, por servidor, por estado y por día) y la tabla completa de registros en hojas horizontales, con el logo de la iglesia. Filtros por periodo, hospital y estado. Se comparte o se imprime; también se puede bajar en Excel. |
+| **Listas de oración en PDF** | El administrador saca la lista con todo lo registrado desde la última vez: hoja de resumen (por hospital, por servidor, por estado y por día) y la tabla completa, con el logo de la iglesia. Al **archivarla**, esos registros ya no salen en la siguiente lista ni en la pestaña Registros; las listas anteriores quedan en «Archivadas» para volver a descargarlas (y se puede deshacer). También en Excel. |
 | **Hospitales** | Cada iglesia define los hospitales que visita. Solo los administradores los dan de alta. |
 | **Oración** | *Oré por esta petición* (queda quién oró) y estados *Por orar → En oración → Respondida* con testimonio. |
 | **Tabla de registros** | Búsqueda sin acentos y filtros. Llamar, WhatsApp y mapa desde el registro. |
 | **Personalización** | Logo, color (toda la app se pinta de ese color), nombre, ciudad y versículo de cada iglesia; nombre y foto de cada usuario. |
-| **Se actualiza sola** | Al abrir la app y cada vez que se vuelve a ella revisa GitHub Releases. Si hay versión nueva la descarga sola y abre el instalador; si se cancela, la vuelve a ofrecer. |
+| **Se actualiza sola** | Al abrir la app y cada vez que se vuelve a ella revisa GitHub Releases. Si hay versión nueva la descarga sola (sigue donde se quedó si se corta la señal) y abre el instalador. La primera vez Android pide permitir «instalar apps de esta fuente»; la app lo explica y continúa sola al regresar. |
 
 ## Unirse por código
 

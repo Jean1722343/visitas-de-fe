@@ -16,6 +16,26 @@ class MainActivity : FlutterActivity() {
         // Abre el instalador de Android con el APK que descargó la app.
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "visitasdefe/instalador")
             .setMethodCallHandler { llamada, resultado ->
+                if (llamada.method == "puedeInstalar") {
+                    resultado.success(
+                        Build.VERSION.SDK_INT < Build.VERSION_CODES.O ||
+                            packageManager.canRequestPackageInstalls(),
+                    )
+                    return@setMethodCallHandler
+                }
+                if (llamada.method == "abrirPermiso") {
+                    // Pantalla de Ajustes: "instalar apps desconocidas" de esta app.
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                        startActivity(
+                            Intent(
+                                Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
+                                Uri.parse("package:$packageName"),
+                            ),
+                        )
+                    }
+                    resultado.success(null)
+                    return@setMethodCallHandler
+                }
                 if (llamada.method != "instalar") {
                     resultado.notImplemented()
                     return@setMethodCallHandler
@@ -29,13 +49,7 @@ class MainActivity : FlutterActivity() {
                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O &&
                         !packageManager.canRequestPackageInstalls()
                     ) {
-                        // Hay que permitir "instalar apps desconocidas" desde esta app.
-                        startActivity(
-                            Intent(
-                                Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
-                                Uri.parse("package:$packageName"),
-                            ),
-                        )
+                        // La app explica primero; "abrirPermiso" abre Ajustes.
                         resultado.success("sin_permiso")
                         return@setMethodCallHandler
                     }

@@ -18,7 +18,8 @@ class VigilanteDeActualizaciones extends ConsumerStatefulWidget {
 class _VigilanteState extends ConsumerState<VigilanteDeActualizaciones>
     with WidgetsBindingObserver {
   DateTime? _ultimaRevision;
-  bool _dialogoAbierto = false;
+  // Uno solo para toda la app, aunque la pantalla se reconstruya.
+  static bool _dialogoAbierto = false;
 
   @override
   void initState() {
@@ -49,7 +50,11 @@ class _VigilanteState extends ConsumerState<VigilanteDeActualizaciones>
     _ultimaRevision = ahora;
     final instalada = await ref.read(versionInstaladaProvider.future);
     final a = await buscarActualizacion(instalada);
-    if (a == null || !mounted || _dialogoAbierto) return;
+    if (a == null) {
+      limpiarDescargas();
+      return;
+    }
+    if (!mounted || _dialogoAbierto) return;
     _dialogoAbierto = true;
     await mostrarActualizacion(context, a);
     _dialogoAbierto = false;
@@ -97,9 +102,12 @@ class _DialogoState extends State<_Dialogo> with WidgetsBindingObserver {
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState estado) {
-    // Al volver de dar el permiso, se reintenta solo.
+    // Al volver de Ajustes se sigue solo, pero únicamente si se dio el
+    // permiso; si no, se queda el aviso (sin volver a abrir Ajustes).
     if (estado == AppLifecycleState.resumed && _fase == _Fase.sinPermiso) {
-      _actualizar();
+      puedeInstalar().then((si) {
+        if (si && mounted) _actualizar();
+      });
     }
   }
 
@@ -141,8 +149,9 @@ class _DialogoState extends State<_Dialogo> with WidgetsBindingObserver {
       ),
       _Fase.sinPermiso => (
         'Falta un permiso',
-        'En la pantalla que se abrió, activa «Permitir de esta fuente» y '
-            'regresa: la actualización sigue sola.',
+        'Para actualizarse, Android pide permitir que esta app instale '
+            'su versión nueva (solo se hace una vez). Toca «Dar permiso», '
+            'activa «Permitir de esta fuente» y regresa: sigue sola.',
       ),
       _Fase.error => (
         'No se pudo descargar',
@@ -217,10 +226,15 @@ class _DialogoState extends State<_Dialogo> with WidgetsBindingObserver {
               ),
             ),
           if (_fase == _Fase.sinPermiso)
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Ahora no'),
+            ),
+          if (_fase == _Fase.sinPermiso)
             FilledButton(
               style: FilledButton.styleFrom(minimumSize: const Size(130, 46)),
-              onPressed: _actualizar,
-              child: const Text('Ya di el permiso'),
+              onPressed: abrirPermisoInstalacion,
+              child: const Text('Dar permiso'),
             ),
         ],
       ),

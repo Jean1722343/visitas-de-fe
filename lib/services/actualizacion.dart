@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:package_info_plus/package_info_plus.dart';
@@ -108,11 +109,16 @@ Future<void> descargarEInstalar(
   Actualizacion a, {
   required void Function(double avance) alAvanzar,
 }) async {
-  final carpeta = await getTemporaryDirectory();
+  // No en la caché: Android la vacía sola cuando el teléfono tiene poco
+  // espacio, aunque sea a mitad de la descarga.
+  final carpeta = Directory(
+    '${(await getApplicationSupportDirectory()).path}/actualizaciones',
+  );
+  await carpeta.create(recursive: true);
   final archivo = File('${carpeta.path}/visitas-de-fe-${a.version}.apk');
   // Se borran descargas de versiones anteriores.
   for (final f in carpeta.listSync().whereType<File>()) {
-    if (f.path.endsWith('.apk') && f.path != archivo.path) {
+    if (!f.path.startsWith(archivo.path)) {
       f.deleteSync();
     }
   }
@@ -123,53 +129,144 @@ Future<void> descargarEInstalar(
   if (yaEsta) {
     alAvanzar(1);
   } else {
-    await _descargar(a, archivo, alAvanzar);
+    // Una sola descarga a la vez: si ya hay una en curso (por ejemplo, la
+    // pantalla se reconstruyó), esta se suma a ella en lugar de empezar
+    // otra sobre el mismo archivo.
+    void avisar() => alAvanzar(_progreso.value);
+    _progreso.addListener(avisar);
+    try {
+      await (_enCurso ??= _descargar(
+        a,
+        archivo,
+        (v) => _progreso.value = v,
+      ).whenComplete(() => _enCurso = null));
+    } catch (e) {
+      // ignore: avoid_print
+      print('[actualizacion] descarga: $e');
+      throw ErrorActualizacion('descarga', e);
+    } finally {
+      _progreso.removeListener(avisar);
+    }
   }
-  final resultado = await _canal.invokeMethod<String>('instalar', {
-    'ruta': archivo.path,
-  });
+  final String? resultado;
+  try {
+    resultado = await _canal.invokeMethod<String>('instalar', {
+      'ruta': archivo.path,
+    });
+  } catch (e) {
+    // ignore: avoid_print
+    print('[actualizacion] instalador: $e');
+    throw ErrorActualizacion('instalador', e);
+  }
   if (resultado == 'sin_permiso') {
     throw const PermisoInstalacion();
   }
 }
 
+Future<void>? _enCurso;
+final _progreso = ValueNotifier<double>(0);
+
+/// Descarga el APK. Si una descarga anterior se cortó (señal débil en el
+/// hospital), sigue desde donde se quedó en lugar de empezar de cero.
 Future<void> _descargar(
   Actualizacion a,
   File archivo,
   void Function(double) alAvanzar,
 ) async {
   final temporal = File('${archivo.path}.parte');
-  final cliente = HttpClient()..connectionTimeout = const Duration(seconds: 15);
-  try {
-    final pedido = await cliente.getUrl(Uri.parse(a.url));
-    pedido.headers.set(HttpHeaders.userAgentHeader, 'visitas-de-fe-app');
-    final respuesta = await pedido.close();
-    if (respuesta.statusCode != 200) {
-      throw HttpException('Respuesta ${respuesta.statusCode}');
+  for (var intento = 0; intento < 4; intento++) {
+    final cliente = HttpClient()
+      ..connectionTimeout = const Duration(seconds: 15)
+      ..idleTimeout = const Duration(seconds: 20);
+    try {
+      final ya = temporal.existsSync() ? temporal.lengthSync() : 0;
+      final pedido = await cliente.getUrl(Uri.parse(a.url));
+      pedido.headers.set(HttpHeaders.userAgentHeader, 'visitas-de-fe-app');
+      if (ya > 0) pedido.headers.set(HttpHeaders.rangeHeader, 'bytes=$ya-');
+      final respuesta = await pedido.close().timeout(
+        const Duration(seconds: 30),
+      );
+      final continua = respuesta.statusCode == HttpStatus.partialContent;
+      if (respuesta.statusCode != HttpStatus.ok && !continua) {
+        if (respuesta.statusCode == HttpStatus.requestedRangeNotSatisfiable) {
+          temporal.deleteSync();
+          continue;
+        }
+        throw HttpException('Respuesta ${respuesta.statusCode}');
+      }
+      var recibido = continua ? ya : 0;
+      final total = continua
+          ? ya + respuesta.contentLength
+          : (respuesta.contentLength > 0 ? respuesta.contentLength : a.tamano);
+      final salida = temporal.openWrite(
+        mode: continua ? FileMode.append : FileMode.write,
+      );
+      try {
+        // Si la red se queda congelada 45 s, se corta y se reintenta.
+        await for (final trozo in respuesta.timeout(
+          const Duration(seconds: 45),
+        )) {
+          salida.add(trozo);
+          recibido += trozo.length;
+          if (total > 0) alAvanzar(recibido / total);
+        }
+      } finally {
+        await salida.close();
+      }
+      if (total > 0 && recibido < total) {
+        throw HttpException('Incompleta: $recibido de $total');
+      }
+      // Solo cuando llegó completa toma su nombre final.
+      await temporal.rename(archivo.path);
+      return;
+    } catch (e) {
+      // ignore: avoid_print
+      print('[actualizacion] intento ${intento + 1}: $e');
+      if (intento == 3) rethrow;
+      await Future<void>.delayed(Duration(seconds: 2 * (intento + 1)));
+    } finally {
+      cliente.close(force: true);
     }
-    final total = respuesta.contentLength > 0
-        ? respuesta.contentLength
-        : a.tamano;
-    final salida = temporal.openWrite();
-    var recibido = 0;
-    await for (final trozo in respuesta) {
-      salida.add(trozo);
-      recibido += trozo.length;
-      if (total > 0) alAvanzar(recibido / total);
-    }
-    await salida.close();
-    if (total > 0 && recibido != total) {
-      throw const HttpException('Descarga incompleta');
-    }
-    // Solo cuando llegó completa toma su nombre final.
-    await temporal.rename(archivo.path);
-  } finally {
-    cliente.close(force: true);
   }
+}
+
+/// Falla al descargar o al abrir el instalador.
+class ErrorActualizacion implements Exception {
+  const ErrorActualizacion(this.paso, this.causa);
+  final String paso;
+  final Object causa;
+  @override
+  String toString() => 'Falla en $paso: $causa';
 }
 
 /// Android necesita que el usuario permita instalar apps desde esta app.
 /// Se abre la pantalla del permiso; al volver se reintenta.
 class PermisoInstalacion implements Exception {
   const PermisoInstalacion();
+}
+
+/// Borra los APK ya descargados (cuando ya no hay nada que instalar).
+Future<void> limpiarDescargas() async {
+  try {
+    final carpeta = Directory(
+      '${(await getApplicationSupportDirectory()).path}/actualizaciones',
+    );
+    if (carpeta.existsSync()) await carpeta.delete(recursive: true);
+  } catch (_) {}
+}
+
+/// Si Android ya permite que esta app instale actualizaciones.
+Future<bool> puedeInstalar() async {
+  try {
+    return await _canal.invokeMethod<bool>('puedeInstalar') ?? false;
+  } catch (_) {
+    return false;
+  }
+}
+
+/// Abre la pantalla de Ajustes donde se permite instalar la actualización.
+Future<void> abrirPermisoInstalacion() async {
+  try {
+    await _canal.invokeMethod<void>('abrirPermiso');
+  } catch (_) {}
 }
