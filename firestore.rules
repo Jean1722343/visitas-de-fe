@@ -1,0 +1,157 @@
+rules_version = '2';
+
+// Quién puede leer y escribir cada cosa. Estas reglas las hace cumplir el
+// servidor de Firebase, no la app: aunque alguien modifique la app, no puede
+// ver datos de otra iglesia ni hacer lo que su rol no permite.
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function autenticado() {
+      return request.auth != null;
+    }
+
+    function rutaMiembro(iglesiaId) {
+      return /databases/$(database)/documents/iglesias/$(iglesiaId)/miembros/$(request.auth.uid);
+    }
+
+    function esMiembro(iglesiaId) {
+      return autenticado()
+        && exists(rutaMiembro(iglesiaId))
+        && get(rutaMiembro(iglesiaId)).data.activo == true;
+    }
+
+    function esAdmin(iglesiaId) {
+      return esMiembro(iglesiaId) && get(rutaMiembro(iglesiaId)).data.rol == 'admin';
+    }
+
+    function textoCorto(v, max) {
+      return v is string && v.size() <= max;
+    }
+
+    // Imagen pequeña guardada dentro del documento (logo o foto de perfil).
+    function imagenValida(datos, campo, maxKb) {
+      return !(campo in datos) || (datos[campo] is bytes && datos[campo].size() < maxKb * 1024);
+    }
+
+    // ------------------------------------------------------------ Usuarios
+    match /usuarios/{uid} {
+      allow read: if autenticado() && request.auth.uid == uid;
+      allow create, update: if autenticado() && request.auth.uid == uid
+        && imagenValida(request.resource.data, 'foto', 200);
+      allow delete: if false;
+    }
+
+    // -------------------------------------------- Códigos de invitación
+    // Se consultan por código exacto; solo los miembros los listan.
+    match /invitaciones/{codigo} {
+      allow get: if autenticado();
+      allow list: if esMiembro(resource.data.iglesiaId);
+      // Cualquier miembro invita servidores; solo un admin invita admins.
+      allow create: if esMiembro(request.resource.data.iglesiaId)
+        && (request.resource.data.rol == 'miembro'
+            || (request.resource.data.rol == 'admin'
+                && esAdmin(request.resource.data.iglesiaId)))
+        && request.resource.data.activa == true
+        && request.resource.data.expiraEn is timestamp
+        && request.resource.data.creadaPor == request.auth.uid;
+      // Anular: cualquier miembro, sin cambiar de iglesia ni de rol.
+      allow update: if esMiembro(resource.data.iglesiaId)
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['activa']);
+      allow delete: if esAdmin(resource.data.iglesiaId);
+    }
+
+    // ------------------------------------------------------------ Iglesias
+    match /iglesias/{iglesiaId} {
+      allow get: if esMiembro(iglesiaId)
+        || (autenticado() && resource.data.creadoPor == request.auth.uid);
+      allow list: if false;
+
+      // Cualquier usuario registra su iglesia y queda como creador.
+      allow create: if autenticado()
+        && request.resource.data.creadoPor == request.auth.uid
+        && textoCorto(request.resource.data.nombre, 80)
+        && request.resource.data.nombre.size() > 0
+        && imagenValida(request.resource.data, 'logo', 300);
+
+      // Solo los administradores la personalizan; el creador no cambia.
+      allow update: if esAdmin(iglesiaId)
+        && request.resource.data.creadoPor == resource.data.creadoPor
+        && textoCorto(request.resource.data.nombre, 80)
+        && request.resource.data.nombre.size() > 0
+        && imagenValida(request.resource.data, 'logo', 300);
+      allow delete: if esAdmin(iglesiaId);
+
+      // ------------------------------------------------------- Miembros
+      match /miembros/{uid} {
+        allow read: if esMiembro(iglesiaId) || (autenticado() && request.auth.uid == uid);
+
+        allow create: if autenticado() && request.auth.uid == uid
+          && imagenValida(request.resource.data, 'foto', 200)
+          && (
+            // El creador de la iglesia entra como primer administrador.
+            // getAfter: la iglesia y este documento se crean en el mismo lote.
+            (getAfter(/databases/$(database)/documents/iglesias/$(iglesiaId)).data.creadoPor == request.auth.uid
+              && request.resource.data.rol == 'admin'
+              && request.resource.data.activo == true)
+            ||
+            // Los demás entran con un código vigente de esta iglesia, con su rol.
+            (request.resource.data.codigoUsado is string
+              && exists(/databases/$(database)/documents/invitaciones/$(request.resource.data.codigoUsado))
+              && get(/databases/$(database)/documents/invitaciones/$(request.resource.data.codigoUsado)).data.iglesiaId == iglesiaId
+              && get(/databases/$(database)/documents/invitaciones/$(request.resource.data.codigoUsado)).data.activa == true
+              && get(/databases/$(database)/documents/invitaciones/$(request.resource.data.codigoUsado)).data.expiraEn > request.time
+              && get(/databases/$(database)/documents/invitaciones/$(request.resource.data.codigoUsado)).data.rol == request.resource.data.rol
+              && request.resource.data.activo == true)
+          );
+
+        // El admin cambia rol o acceso; cada quien solo su nombre y su foto.
+        allow update: if (esAdmin(iglesiaId)
+            && imagenValida(request.resource.data, 'foto', 200))
+          || (esMiembro(iglesiaId) && request.auth.uid == uid
+              && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['nombre', 'foto'])
+              && textoCorto(request.resource.data.nombre, 80)
+              && imagenValida(request.resource.data, 'foto', 200));
+        // El admin quita a cualquiera; cualquiera puede salirse.
+        allow delete: if esAdmin(iglesiaId)
+          || (autenticado() && request.auth.uid == uid);
+      }
+
+      // ----------------------------------------------------- Hospitales
+      // Todos los ven; solo los administradores los dan de alta.
+      match /hospitales/{id} {
+        allow read: if esMiembro(iglesiaId);
+        allow create, update: if esAdmin(iglesiaId)
+          && textoCorto(request.resource.data.nombre, 120)
+          && request.resource.data.nombre.size() > 0;
+        allow delete: if esAdmin(iglesiaId);
+      }
+
+      // ---------------------------------------------- Listas archivadas
+      match /cortes/{id} {
+        allow read, create, delete: if esAdmin(iglesiaId);
+        allow update: if false;
+      }
+
+      // ------------------------------------------------------ Registros
+      // Cualquier miembro registra a su nombre; nadie cambia quién registró.
+      match /registros/{id} {
+        allow read: if esMiembro(iglesiaId);
+        allow create: if esMiembro(iglesiaId)
+          && request.resource.data.registradoPor == request.auth.uid
+          && textoCorto(request.resource.data.nombre, 150)
+          && request.resource.data.nombre.size() > 0
+          && request.resource.data.consentimiento == true
+          && request.resource.data.archivado == false;
+        // Solo el administrador archiva (o desarchiva) al sacar la lista.
+        allow update: if esMiembro(iglesiaId)
+          && request.resource.data.registradoPor == resource.data.registradoPor
+          && request.resource.data.registradoPorNombre == resource.data.registradoPorNombre
+          && (esAdmin(iglesiaId)
+              || (request.resource.data.get('archivado', false) == resource.data.get('archivado', false)
+                  && request.resource.data.get('corteId', '') == resource.data.get('corteId', '')));
+        allow delete: if esAdmin(iglesiaId)
+          || (esMiembro(iglesiaId) && resource.data.registradoPor == request.auth.uid);
+      }
+    }
+  }
+}

@@ -1,0 +1,56 @@
+name: visitas_de_fe
+description: "Registro de visitas a hospitales y peticiones de oración para iglesias"
+publish_to: 'none'
+
+# Al publicar una versión nueva en GitHub (Releases) hay que subir este número:
+# la app compara su versión con la etiqueta del release (por ejemplo v1.0.1).
+version: 1.0.1+2
+
+environment:
+  sdk: ^3.14.0
+
+dependencies:
+  flutter:
+    sdk: flutter
+  flutter_localizations:
+    sdk: flutter
+  material_ui: ^1.1.0
+  firebase_core: ^5.1.0
+  firebase_auth: ^7.0.1
+  cloud_firestore: ^7.1.0
+  flutter_riverpod: ^3.5.0
+  image_picker: ^1.2.4
+  image: ^4.3.0
+  intl: ^0.20.3
+  url_launcher: ^6.3.3
+  share_plus: ^13.3.1
+  excel: ^4.0.6
+  pdf: ^3.12.0
+  printing: ^5.14.3
+  path_provider: ^2.1.6
+  package_info_plus: ^10.2.2
+  shared_preferences: ^2.5.6
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+
+flutter:
+  uses-material-design: true
+
+  fonts:
+    - family: Bricolage
+      fonts:
+        - asset: assets/fuentes/Bricolage-600.ttf
+          weight: 600
+        - asset: assets/fuentes/Bricolage-800.ttf
+          weight: 800
+    - family: Figtree
+      fonts:
+        - asset: assets/fuentes/Figtree-400.ttf
+          weight: 400
+        - asset: assets/fuentes/Figtree-600.ttf
+          weight: 600
+        - asset: assets/fuentes/Figtree-700.ttf
+          weight: 700
